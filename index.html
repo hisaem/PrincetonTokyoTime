@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TimeTwin — Princeton/Tokyo Time App (AM/PM)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-indigo-50 via-white to-rose-50">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    const TZ = {
+      PRINCETON: "America/New_York",
+      TOKYO: "Asia/Tokyo",
+    };
+
+    function fmt(dt, timeZone, locale = "en-US") {
+      return new Intl.DateTimeFormat(locale, {
+        timeZone,
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        weekday: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      }).format(dt);
+    }
+
+    function fromLocalISO(iso) {
+      if (!iso) return new Date();
+      const [datePart, timePart] = iso.split("T");
+      if (!datePart || !timePart) return new Date();
+      const [Y, M, D] = datePart.split("-").map(Number);
+      const [h, m] = timePart.split(":").map(Number);
+      return new Date(Y, (M || 1) - 1, D || 1, h || 0, m || 0, 0);
+    }
+
+    function toISOMinutes(d) {
+      const pad = (n) => String(n).padStart(2, "0");
+      const Y = d.getFullYear();
+      const M = pad(d.getMonth() + 1);
+      const D = pad(d.getDate());
+      const h = pad(d.getHours());
+      const m = pad(d.getMinutes());
+      return `${Y}-${M}-${D}T${h}:${m}`;
+    }
+
+    function Card({ title, subtitle, children }) {
+      return (
+        <div className="rounded-2xl shadow-lg border border-gray-200 p-5 bg-white/80 backdrop-blur-sm">
+          <div className="flex items-baseline justify-between mb-2">
+            <h3 className="text-xl font-semibold tracking-tight">{title}</h3>
+            {subtitle ? <span className="text-xs text-gray-500 uppercase tracking-wide">{subtitle}</span> : null}
+          </div>
+          <div className="text-2xl font-mono tabular-nums leading-snug">{children}</div>
+        </div>
+      );
+    }
+
+    function TimeTwinApp() {
+      const [mode, setMode] = useState("Princeton");
+      const [timeMode, setTimeMode] = useState("now");
+      const [customISO, setCustomISO] = useState(toISOMinutes(new Date()));
+      const [tick, setTick] = useState(0);
+      const [labelOther, setLabelOther] = useState("");
+
+      const browserTZ = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
+
+      useEffect(() => {
+        if (timeMode === "now") {
+          const id = setInterval(() => setTick((t) => t + 1), 1000);
+          return () => clearInterval(id);
+        }
+      }, [timeMode]);
+
+      const baseLocalDate = useMemo(() => (timeMode === "now" ? new Date() : fromLocalISO(customISO)), [timeMode, customISO, tick]);
+
+      const views = useMemo(() => {
+        if (mode === "Princeton") {
+          return [
+            { title: "Princeton (Local)", tz: TZ.PRINCETON, subtitle: TZ.PRINCETON },
+            { title: "Tokyo (Auto)", tz: TZ.TOKYO, subtitle: TZ.TOKYO },
+          ];
+        }
+        if (mode === "Tokyo") {
+          return [
+            { title: "Tokyo (Local)", tz: TZ.TOKYO, subtitle: TZ.TOKYO },
+            { title: "Princeton (Auto)", tz: TZ.PRINCETON, subtitle: TZ.PRINCETON },
+          ];
+        }
+        return [
+          { title: labelOther ? `${labelOther} (Local)` : "Your Location (Local)", tz: browserTZ, subtitle: browserTZ },
+          { title: "Princeton", tz: TZ.PRINCETON, subtitle: TZ.PRINCETON },
+          { title: "Tokyo", tz: TZ.TOKYO, subtitle: TZ.TOKYO },
+        ];
+      }, [mode, labelOther, browserTZ]);
+
+      const nudgeMinutes = (delta) => {
+        const cur = timeMode === "now" ? new Date() : fromLocalISO(customISO);
+        const nudged = new Date(cur.getTime() + delta * 60 * 1000);
+        setCustomISO(toISOMinutes(nudged));
+        setTimeMode("custom");
+      };
+
+      return (
+        <div className="min-h-screen w-full text-gray-900">
+          <div className="max-w-4xl mx-auto p-6">
+            <header className="mb-6">
+              <h1 className="text-3xl font-bold tracking-tight">TimeTwin</h1>
+              <p className="text-gray-600 mt-1">
+                Select where you are. Choose a base time (Now or Custom). The app shows the paired city automatically.
+              </p>
+            </header>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              {[
+                { key: "Princeton", hint: "Shows Tokyo automatically" },
+                { key: "Tokyo", hint: "Shows Princeton automatically" },
+                { key: "Other", hint: "Enter your place label" },
+              ].map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setMode(opt.key)}
+                  className={`rounded-2xl border p-4 text-left transition shadow-sm hover:shadow-md ${
+                    mode === opt.key ? "border-indigo-500 bg-white" : "border-gray-200 bg-white/70"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">{opt.key}</span>
+                    {mode === opt.key ? (
+                      <span className="text-xs text-indigo-600">selected</span>
+                    ) : (
+                      <span className="text-xs text-gray-400">select</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">{opt.hint}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 p-4 mb-6 bg-white/80">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <span className="text-sm font-medium">Clock source</span>
+                  <div className="mt-2 flex items-center gap-3">
+                    <label className="inline-flex items-center gap-2">
+                      <input type="radio" name="clocksrc" checked={timeMode === "now"} onChange={() => setTimeMode("now")} />
+                      <span className="text-sm">Now (updates every second)</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input type="radio" name="clocksrc" checked={timeMode === "custom"} onChange={() => setTimeMode("custom")} />
+                      <span className="text-sm">Custom</span>
+                    </label>
+                  </div>
+                </div>
+
+                <label className="block">
+                  <span className="text-sm font-medium">Custom date & time (local TZ)</span>
+                  <input type="datetime-local" className="mt-1 w-full rounded-xl border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-40" value={customISO} onChange={(e) => setCustomISO(e.target.value)} disabled={timeMode !== "custom"} />
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <button className="rounded-lg border px-2 py-1 hover:bg-gray-50" onClick={() => nudgeMinutes(-60)}>−1h</button>
+                    <button className="rounded-lg border px-2 py-1 hover:bg-gray-50" onClick={() => nudgeMinutes(60)}>+1h</button>
+                    <button className="rounded-lg border px-2 py-1 hover:bg-gray-50" onClick={() => nudgeMinutes(-1440)}>−1d</button>
+                    <button className="rounded-lg border px-2 py-1 hover:bg-gray-50" onClick={() => nudgeMinutes(1440)}>+1d</button>
+                    <button className="rounded-lg border px-2 py-1 hover:bg-gray-50" onClick={() => { setCustomISO(toISOMinutes(new Date())); setTimeMode("custom"); }}>set to now</button>
+                  </div>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Tip: The left column is your location; the right column(s) show the paired city time.</p>
+            </div>
+
+            {mode === "Other" && (
+              <div className="rounded-2xl border border-gray-200 p-4 mb-6 bg-white/80">
+                <label className="block">
+                  <span className="text-sm font-medium">Your location label (English)</span>
+                  <input type="text" placeholder="e.g., London, Zurich, Honolulu" className="mt-1 w-full rounded-xl border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" value={labelOther} onChange={(e) => setLabelOther(e.target.value)} />
+                  <span className="text-xs text-gray-500">(Label only; timezone uses your browser setting: {browserTZ})</span>
+                </label>
+              </div>
+            )}
+
+            <div className={`grid gap-4 ${mode === "Other" ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+              {views.map((v) => (
+                <Card key={v.title} title={v.title} subtitle={v.subtitle}>
+                  {fmt(baseLocalDate, v.tz)}
+                </Card>
+              ))}
+            </div>
+
+            <footer className="mt-8 text-xs text-gray-500">Built with browser time zone ({browserTZ}). Princeton ↔ Tokyo use America/New_York and Asia/Tokyo.</footer>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<TimeTwinApp />);
+  </script>
+</body>
+</html>
